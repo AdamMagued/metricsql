@@ -87,12 +87,12 @@ func appendPrettifiedExpr(dst []byte, e Expr, indent int, needParens bool) []byt
 			dst = append(dst, "(\n"...)
 			indent++
 		}
-		dst = appendPrettifiedExpr(dst, t.Left, indent, t.needLeftParens())
+		dst = appendPrettifiedExpr(dst, t.Left, indent, needBinaryOpArgParensPrettify(t.Left, t.Op, false))
 		dst = append(dst, '\n')
 		dst = appendIndent(dst, indent+1)
 		dst = t.appendModifiers(dst)
 		dst = append(dst, '\n')
-		dst = appendPrettifiedExpr(dst, t.Right, indent, t.needRightParens())
+		dst = appendPrettifiedExpr(dst, t.Right, indent, needBinaryOpRightParensPrettify(t))
 		if t.KeepMetricNames {
 			indent--
 			dst = append(dst, '\n')
@@ -251,3 +251,53 @@ func appendIndent(dst []byte, indent int) []byte {
 	}
 	return dst
 }
+
+func needBinaryOpRightParensPrettify(be *BinaryOpExpr) bool {
+	if needBinaryOpArgParensPrettify(be.Right, be.Op, true) {
+		return true
+	}
+	switch t := be.Right.(type) {
+	case *MetricExpr:
+		metricName := t.getMetricName()
+		return isReservedBinaryOpIdent(metricName)
+	case *FuncExpr:
+		if isReservedBinaryOpIdent(t.Name) {
+			return true
+		}
+		return t.KeepMetricNames || be.KeepMetricNames
+	default:
+		return false
+	}
+}
+
+func needBinaryOpArgParensPrettify(arg Expr, parentOp string, isRight bool) bool {
+	switch t := arg.(type) {
+	case *BinaryOpExpr:
+		if t.GroupModifier.Op != "" || t.JoinModifier.Op != "" || t.Bool || t.FillLeft != nil || t.FillRight != nil {
+			return true
+		}
+		childPrio := binaryOpPriority(t.Op)
+		parentPrio := binaryOpPriority(parentOp)
+		if childPrio != parentPrio {
+			return true
+		}
+		if isRight {
+			if isRightAssociativeBinaryOp(parentOp) {
+				return t.Op != parentOp
+			}
+			return true
+		}
+		if isRightAssociativeBinaryOp(parentOp) {
+			return true
+		}
+		return t.Op != parentOp
+	case *RollupExpr:
+		if be, ok := t.Expr.(*BinaryOpExpr); ok && be.KeepMetricNames {
+			return true
+		}
+		return t.Offset != nil || t.At != nil
+	default:
+		return false
+	}
+}
+

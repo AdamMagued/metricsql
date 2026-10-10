@@ -282,4 +282,58 @@ x + sum(y)`)
 	another(`{__name__="foo",bar="baz"}`, `foo{bar="baz"}`)
 
 	another(`10 - (3 + 3 + 4)`, `10 - ((3 + 3) + 4)`)
+
+	// see https://github.com/VictoriaMetrics/metricsql/issues/54
+	another(`(1 - (node_memory_MemFree_bytes + node_memory_Cached_bytes + node_memory_Buffers_bytes + node_memory_SReclaimable_bytes) / node_memory_MemTotal_bytes) * 100`,
+		`(
+  1
+    -
+  (
+    (
+      node_memory_MemFree_bytes + node_memory_Cached_bytes
+        +
+      node_memory_Buffers_bytes
+        +
+      node_memory_SReclaimable_bytes
+    )
+      /
+    node_memory_MemTotal_bytes
+  )
+)
+  *
+100`)
+
+	// Long chain of additions without extra outer parens around left child
+	another(`node_memory_MemFree_bytes + node_memory_Cached_bytes + node_memory_Buffers_bytes + node_memory_SReclaimable_bytes`,
+		`node_memory_MemFree_bytes + node_memory_Cached_bytes
+  +
+node_memory_Buffers_bytes
+  +
+node_memory_SReclaimable_bytes`)
+
+	// Long chain of multiplications
+	another(`node_memory_MemFree_bytes * node_memory_Cached_bytes * node_memory_Buffers_bytes * node_memory_SReclaimable_bytes`,
+		`node_memory_MemFree_bytes * node_memory_Cached_bytes
+  *
+node_memory_Buffers_bytes
+  *
+node_memory_SReclaimable_bytes`)
+
+	// Same precedence left-associative subtraction chain
+	another(`node_memory_MemTotal_bytes - node_memory_MemFree_bytes - node_memory_Cached_bytes - node_memory_Buffers_bytes`,
+		`node_memory_MemTotal_bytes - node_memory_MemFree_bytes
+  -
+node_memory_Cached_bytes
+  -
+node_memory_Buffers_bytes`)
+
+	// Subtraction with right child keeping required parentheses
+	another(`node_memory_MemTotal_bytes - (node_memory_MemFree_bytes + node_memory_Cached_bytes + node_memory_Buffers_bytes)`,
+		`node_memory_MemTotal_bytes
+  -
+(
+  node_memory_MemFree_bytes + node_memory_Cached_bytes
+    +
+  node_memory_Buffers_bytes
+)`)
 }
